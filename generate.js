@@ -18,7 +18,11 @@ Node.prototype.addChild = function(val) {
 
 Node.prototype.getChild = function(val) {
   return this.children[val];
-}
+};
+
+Node.prototype.getChildren = function() {
+  return this.children;
+};
 
 Node.prototype.addFileId = function(fileId) {
   this.fileIds[fileId] = true;
@@ -26,6 +30,10 @@ Node.prototype.addFileId = function(fileId) {
 
 Node.prototype.getFileIds = function() {
   return Object.keys(this.fileIds);
+};
+
+Node.prototype.isLeaf = function() {
+  return Object.keys(this.children).length === 0;
 };
 
 //-----
@@ -51,6 +59,7 @@ var assignId = function(rootPath) {
   return nextId - 1;
 };
 
+var filterToLowerCase
 var trie = new Node();
 // Adds file's contents, split on spaces, to trie
 var scanFile = function(fileId) {
@@ -83,8 +92,6 @@ var traverseFiles = function(rootPath) {
 
 traverseFiles(ROOT_PATH);
 
-// console.log(trie.getChild('a').getChild('b').getChild('l').getChild('e'));
-
 var search = function(str) {
   var currNode = trie;
   for (var i = 0; i < str.length; i++) {
@@ -109,3 +116,53 @@ fs.writeFileSync(FILE_IDS_PATH, JSON.stringify(idToPath));
 // for each node:
   // write size as int
   // write json of its this.children array to the file
+
+// start from leaves:
+  // write size
+  // write json of its fileIds to disk
+  // save its offset to global offsets hash
+
+// then up to its parent:
+//   for each of its children prefixes,
+//     look up offset in offsets
+//     delete from offsets
+//     create a hash of its own children:
+//       key: child letter
+//       val: offset
+//     stringify this hash
+    // write to TRIE_PATH
+
+var getSize = function(str) {
+  return Buffer.byteLength(str, 'utf8');
+};
+
+var currOffset = 0;
+var offsets = {
+  // key: full prefix
+  // value: offset in bytes (int)
+};
+var bottomUp = function(rootNode, prefix) {
+  prefix = prefix || '';
+
+  var childTuples = {};
+  for (var childChar in rootNode.getChildren()) {
+    var childNode = rootNode.getChild(childChar);
+    childTuples[childChar] = bottomUp(childNode, prefix + childChar);
+  }
+  var writeContents = JSON.stringify({
+    children: childTuples,
+    fileIds: rootNode.getFileIds()
+  });
+  var size = getSize(writeContents);
+  fs.appendFileSync(TRIE_PATH, writeContents);
+
+  if (rootNode === trie) {
+    fs.writeFileSync('TEMP_TRIE_ROOT', writeContents);
+  }
+  currOffset += size;
+  console.log(prefix, currOffset - size, size);
+  return [ currOffset - size, size ];
+};
+
+fs.writeFileSync(TRIE_PATH, '');
+bottomUp(trie);
